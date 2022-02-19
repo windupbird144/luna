@@ -1,7 +1,7 @@
-from datetime import datetime, timedelta
 import re
+from datetime import datetime, timedelta
+
 import requests
-import schedule
 
 # Example:
 #
@@ -55,15 +55,19 @@ def normalize(name):
     name = name.lower()
     return name
 
-def seconds_until_next_check():
-    """Returns the seconds until the next :00:15 :15:15, :30:15, :45:15"""
-    for m in ["00","15","30","45"]:
-        schedule.every().hour.at(f"{m}:20").do(lambda x: x)
-    return schedule.idle_seconds()
-
-if __name__ == '__main__':
-    now = datetime.now()
-    nxt = seconds_until_next_check()
-    print(f"it is {now}")
-    print(f"seconds until next check: {nxt}")
-    print(f"btw that's {nxt//60} minutes {nxt%60} seconds")
+def seconds_until_next_change(start : datetime =None):
+    """Returns the number of seconds until the next pokerus change. Changes happen
+    when the minute is 0, 30, 15 or 45 at the second 20
+    
+    Parameters:
+    start (optional) - A datetime from which to calculate the number of seconds.
+    When omitted, the function use datetime.now()
+    """
+    start = start or datetime.now()
+    if start.minute % 15 == 0 and start.second <= 20:
+        return 20 - start.second
+    else:
+        target = start + timedelta(minutes=1)
+        while target.minute % 15 != 0:
+            target = target + timedelta(minutes=1)
+        return (target - start).seconds

@@ -39,7 +39,7 @@ class Luna(discord.Client):
 
     @announce_pokerus.before_loop
     async def before_my_task(self):
-        await asyncio.sleep(pokerus.seconds_until_next_check())
+        await asyncio.sleep(pokerus.seconds_until_next_change())
 
     async def on_message(self, message):
         # we don't want the bot to reply to itself
