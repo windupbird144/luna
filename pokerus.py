@@ -1,14 +1,12 @@
 import re
+import env
 from datetime import datetime, timedelta
 
 import requests
 
-# Example:
-#
-# curl --head https://pokefarm.com/user/~pkrs
-#
-# Response:
-# Location: /users/lakaihia 
+# Do not use real requests in development
+if env.is_development():
+    requests = None
 
 base_url = 'https://pokefarm.com'
 pkrs_url = '/user/~pkrs'
@@ -28,6 +26,8 @@ def fetch_pokerus_holder_url():
     Example:
     fetch_pokerus_holder_url() == '/user/system'
     '''
+    if env.is_development():
+        return "/user/system"
     r = requests.head(to_absolute(pkrs_url))
     assert r.status_code == 302
     pokerus_holder_url = r.headers['location']
@@ -48,6 +48,13 @@ def parse_user_url(relative_url):
 
 def get_rus_holder():
     return parse_user_url(fetch_pokerus_holder_url())
+
+def user_exists(name):
+    if env.is_development():
+        return name == "system", "https://pokefarm.com/user/system"
+    resolved = to_absolute(f"/user/{name}")
+    r = requests.head(resolved)
+    return r.status_code < 300, resolved
 
 def normalize(name):
     name = name.strip()

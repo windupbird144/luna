@@ -8,16 +8,85 @@ import re
 from asyncio import events
 from datetime import datetime, timedelta
 from time import sleep, time
+from venv import create
 
 import discord
 from discord.ext import commands, tasks
 
+import env
 import mappings
 import pokerus
+import polls
 
-pattern = re.compile("^@luna @\S+ is (.+)$")
+"""Luna reacts to messages matching one of these regex patterns"""
+add_mapping_pattern = re.compile("^@luna @.+? is (.+)$")
+create_poll_pattern = re.compile("^@luna (poll: .+)$")
+hug_pattern = re.compile("^@luna hug @.+?$")
+
+
+"""The list of emojis used to enumerate the poll answers. The number of
+emojis in this list determines the maximum number of distinct answers on a
+poll. Entries in this list must be valid Unicode emojis"""
+poll_emojis = [
+    "\U0001f1e6", # regional indicator A
+    "\U0001f1e7", # regional indicator B
+    "\U0001f1e8", # ...
+    "\U0001f1e9",
+    "\U0001f1ea",
+    "\U0001f1eb",
+    "\U0001f1ec",
+    "\U0001f1ed",
+    "\U0001f1ee",
+    "\U0001f1ef",
+    "\U0001f1f0",
+    "\U0001f1f1",
+    "\U0001f1f2",
+    "\U0001f1f3",
+    "\U0001f1f4",
+    "\U0001f1f5",
+    "\U0001f1f6",
+    "\U0001f1f7",
+    "\U0001f1f8",
+    "\U0001f1f9",
+    "\U0001f1fa",
+    "\U0001f1fb",
+    "\U0001f1fc",
+    "\U0001f1fd", # ...
+    "\U0001f1fe", # regional indicator Y
+    "\U0001f1ff"  # regional indicator Z
+]
 
 class Luna(discord.Client):
+    def parse(self, message):
+        """Parses a Discord message to a command. returns None if the message
+        is not a command for luna."""
+        # do not reply to yourself
+        if self.user.id == message.author.id:
+            return None
+        
+        # luna was not pinged
+        if not self.user.id in message.raw_mentions:
+            return None
+
+        # matching against the 'add mapping' command
+        m = add_mapping_pattern.match(message.clean_content)
+        if m is not None:
+            [_, member_id] = message.raw_mentions
+            [_,member] = message.mentions
+            pfq_display_name = m.group(1)
+            pfq_name = pokerus.normalize(pfq_display_name)
+            return 'add_mapping', member_id, pfq_name, member.display_name, pfq_display_name
+        
+        # match against the poll pattern
+        m = create_poll_pattern.match(message.clean_content)
+        if m is not None:
+            return 'create_poll', m.group(1) 
+
+        # match against the hug pattern
+        m = hug_pattern.match(message.clean_content)
+        if m is not None and len(message.raw_mentions) == 2:
+            return 'hug', message.raw_mentions[1]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.announce_pokerus.start()
@@ -39,22 +108,46 @@ class Luna(discord.Client):
 
     @announce_pokerus.before_loop
     async def before_my_task(self):
+        # Return immediately in development
+        if env.is_development():
+            return await self.wait_until_ready()
+        # Wait until the next :00:20, :15:20, :30:20, :45:20
         await asyncio.sleep(pokerus.seconds_until_next_change())
 
     async def on_message(self, message):
-        # we don't want the bot to reply to itself
-        if self.user.id == message.author.id:
+        command = self.parse(message)
+        if command is None:
             return
-        
-        # somebody mentioned luna
-        if len(message.raw_mentions) and message.raw_mentions[0] == self.user.id:
-            m = pattern.match(message.clean_content)
-            if len(message.raw_mentions) == 2 and m is not None:
-                [_, member_id] = message.raw_mentions
-                [_,member] = message.mentions
-                pfq_name = pokerus.normalize(m.group(1))
+        elif command[0] == 'add_mapping':
+            _, member_id, pfq_name, member_display_name, pfq_display_name = command
+            user_exists,resolved_url = pokerus.user_exists(pfq_name)
+            if user_exists:
                 mappings.add_mapping(pfq_name, member_id)
-                await message.channel.send(f"thank you, i added {member.display_name} as {pfq_name}")
+                await message.channel.send(f"thank you, i added {member_display_name} as {pfq_display_name}")
+            else:
+                apology = f"sorry, i can't find {pfq_display_name} on pfq. i looked at the url <{resolved_url}>"
+                has_special_chars = not re.match("^[a-zA-Z0-9 ]+$", pfq_name)
+                if has_special_chars:
+                    apology = f"{apology}. please try again without special characters?"
+                await message.channel.send(apology)
+        elif command[0] == 'create_poll':
+            _, pollstring = command
+            my_poll = polls.parse(pollstring)
+            if my_poll is not None:
+                q = my_poll["question"]
+                answers = my_poll["answers"]
+                to_send = f"poll: {q}\n"
+                max_answers = len(poll_emojis) # we can't have more answers in the poll than there are react emojis
+                answers = answers[:max_answers]
+                for i,a in enumerate(answers[:max_answers]):
+                    to_send = f"{to_send}{poll_emojis[i]}\t{a}\n"
+                reply = await message.channel.send(to_send)
+                for i in range(len(answers)):
+                    await reply.add_reaction(poll_emojis[i])
+        elif command[0] == 'hug':
+            _, to_hug = command
+            to_send = f"\*hugs <@!{to_hug}>\*"
+            await message.channel.send(to_send)
 
 if __name__ == "__main__":
     token = os.getenv('DISCORD_TOKEN')
