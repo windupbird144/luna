@@ -101,6 +101,10 @@ class Luna(discord.Client):
         for guild in self.guilds:
             holder = f"<@!{member}>" if member else name
             reply = f"{holder} has Pokérus <{url}>"
+            # prefix the reply with a message if it is reset
+            now = datetime.utcnow()
+            if now.hour == 0 and now.minute == 0:
+                reply= f"Happy reset! {reply}"
             channel = discord.utils.get(guild.text_channels, name='rus-alert')
             if channel is not None:
                 await channel.send(reply)
