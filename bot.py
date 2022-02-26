@@ -4,9 +4,10 @@ Environment variables:
 """
 import asyncio
 import os
+import random
 import re
 from asyncio import events
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from time import sleep, time
 from venv import create
 
@@ -18,11 +19,14 @@ import mappings
 import pokerus
 import polls
 
+import dateparser
+
 """Luna reacts to messages matching one of these regex patterns"""
 add_mapping_pattern = re.compile("^@luna @.+? is (.+)$")
 create_poll_pattern = re.compile("^@luna (poll: .+)$")
 hug_pattern = re.compile("^@luna hug @.+?$")
-
+remindme_pattern = re.compile("^@luna remind me (to .+) (in .+)$")
+choose_pattern = re.compile("^@luna choose: (.+)$")
 
 """The list of emojis used to enumerate the poll answers. The number of
 emojis in this list determines the maximum number of distinct answers on a
@@ -56,6 +60,9 @@ poll_emojis = [
     "\U0001f1ff"  # regional indicator Z
 ]
 
+def split_and_strip(s: str, sep: str) -> list[str]:
+    return [x.strip() for x in s.split(sep)]
+
 class Luna(discord.Client):
     def parse(self, message):
         """Parses a Discord message to a command. returns None if the message
@@ -87,9 +94,29 @@ class Luna(discord.Client):
         if m is not None and len(message.raw_mentions) == 2:
             return 'hug', message.raw_mentions[1]
 
+        # match against the remindme pattern
+        m = remindme_pattern.match(message.clean_content)
+        if m is not None:
+            person, task, display_time = message.author.id, m.group(1), m.group(2)
+            time = dateparser.parse(display_time)
+            # must be a naive datetime
+            if time is None or time.tzinfo is not None:
+                return
+            time = time.astimezone(timezone.utc).timestamp()
+            return 'remindme', person, task, time, display_time
+
+        # match against choose pattern
+        m = choose_pattern.match(message.clean_content)
+        if m is not None:
+            choices = m.group(1)
+            choices = split_and_strip(choices, "/")
+            chosen = random.choice(choices)
+            return 'choose', chosen
+        
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.announce_pokerus.start()
+        self.check_reminders.start()
 
     async def on_ready(self):
         print('Luna is connected to Discord!')
@@ -109,6 +136,16 @@ class Luna(discord.Client):
             if channel is not None:
                 await channel.send(reply)
 
+    @tasks.loop(seconds=12)
+    async def check_reminders(self):
+        reference_time = datetime.now().timestamp()
+        for guild in self.guilds:
+            reminders = mappings.get_due_reminders(reference_time)
+            channel = discord.utils.get(guild.text_channels, name='bot')
+            for (person, task, due) in reminders:
+                msg = f"<@!{person}> here is your reminder {task}"
+                await channel.send(msg)
+            mappings.delete_due_reminders(reference_time)
 
     @announce_pokerus.before_loop
     async def before_my_task(self):
@@ -152,6 +189,15 @@ class Luna(discord.Client):
             _, to_hug = command
             to_send = f"\*hugs <@!{to_hug}>\*"
             await message.channel.send(to_send)
+        elif command[0] == 'remindme':
+            _, person, task, due, display_time = command
+            mappings.add_reminder(person, task, due)
+            reply = f"thanks, i will remind you {task} {display_time}"
+            await message.reply(reply)
+        elif command[0] == 'choose':
+            _, choice = command
+            to_reply = f"i choose {choice}"
+            await message.reply(to_reply)
 
 if __name__ == "__main__":
     token = os.getenv('DISCORD_TOKEN')

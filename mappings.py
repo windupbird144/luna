@@ -2,10 +2,12 @@
 Manages mappings between Pokefarm Q usernames and discord
 member IDs.
 """
-
+from datetime import datetime
 import sqlite3
 
 con = sqlite3.connect('luna.db')
+
+cur = con.cursor()
 
 
 def add_mapping(pfq_name, member_id):
@@ -27,3 +29,24 @@ def get_member_id(pfq_name):
     if next:
         return next[0]
     return None
+
+
+def add_reminder(person, task, due):
+    cur = con.cursor()
+    cur.execute('''INSERT INTO reminders (person, task, due) VALUES (?, ?, ?)''', [person, task, due])
+    con.commit()
+
+def get_due_reminders(reference_time) -> list:
+    """Returns all reminders that are due relative to reference_time"""
+    cur = con.cursor()
+    cur.execute('''SELECT person, task, due from reminders where due < ?''', [reference_time])
+    due_reminders = cur.fetchall()
+    cur.close()
+    return due_reminders
+
+def delete_due_reminders(reference_time):
+    """Delets all reminders that are due relative to reference_time"""
+    cur = con.cursor()
+    cur.execute('''DELETE from reminders where due < ?''', [reference_time])
+    cur.close()
+    con.commit()
