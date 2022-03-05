@@ -20,6 +20,7 @@ import pokerus
 import polls
 
 import dateparser
+import dictionary
 
 """Luna reacts to messages matching one of these regex patterns"""
 add_mapping_pattern = re.compile("^@luna @.+? is (.+)$")
@@ -27,6 +28,7 @@ create_poll_pattern = re.compile("^@luna (poll: .+)$")
 hug_pattern = re.compile("^@luna hug @.+?$")
 remindme_pattern = re.compile("^@luna remind me (to .+) (in .+)$")
 choose_pattern = re.compile("^@luna choose: (.+)$")
+define_pattern = re.compile("^@luna define (.+)$")
 
 """The list of emojis used to enumerate the poll answers. The number of
 emojis in this list determines the maximum number of distinct answers on a
@@ -113,6 +115,12 @@ class Luna(discord.Client):
             chosen = random.choice(choices)
             return 'choose', chosen
         
+        # match against define pattern
+        m = define_pattern.match(message.clean_content)
+        if m is not None:
+            word = m.group(1)
+            return 'define', word
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.announce_pokerus.start()
@@ -197,6 +205,16 @@ class Luna(discord.Client):
         elif command[0] == 'choose':
             _, choice = command
             to_reply = f"i choose {choice}"
+            await message.reply(to_reply)
+        elif command[0] == 'define':
+            _, word = command
+            definitions = dictionary.get_definitions(word)
+            if definitions is None:
+                to_reply = f"sorry, i could not find anything for '{word}'"
+            elif len(definitions) < 2:
+                to_reply = definitions[0]
+            else:
+                to_reply = '\n'.join(f"{i}. {x}" for (i,x) in  enumerate(definitions, 1))
             await message.reply(to_reply)
 
 if __name__ == "__main__":
