@@ -1,7 +1,0 @@
-__pycache__
-.venv
-.vscode
-*.db
-*.zip
-# needs testing
-examples/luna.service
