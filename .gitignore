@@ -10,8 +10,8 @@
 
 # But not these files...
 !/.gitignore
-
 !*.go
+!migrations/*
 !go.sum
 !go.mod
 !.gitkeep
