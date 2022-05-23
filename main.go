@@ -67,6 +67,36 @@ var (
 				},
 			},
 		},
+		{
+			Name:        "hyperbeam",
+			Description: "fire off a hyperbeam",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionUser,
+					Name:        "target",
+					Description: "the target of your hyperbeam",
+					Required:    true,
+				},
+			},
+		},
+		{
+			Name:        "setreminder",
+			Description: "set a reminder",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "what",
+					Description: "what you want to be reminded of",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "when",
+					Description: "e.g. in 1 hour",
+					Required:    true,
+				},
+			},
+		},
 	}
 	commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
 		"hug": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -121,6 +151,44 @@ var (
 				},
 			})
 		},
+		"hyperbeam": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			if target := i.ApplicationCommandData().Options[0].UserValue(nil); target != nil {
+				hyperbeam := stuff.NewHyperBeam()
+				reply := fmt.Sprintf("%s users Hyper Beam on %s! %s takes %d damage!", i.Member.Mention(), target.Mention(), target.Mention(), hyperbeam.ActualDamage())
+				if hyperbeam.ActualDamage() >= 100 {
+					reply = reply + fmt.Sprintf(" It's a critical hit! %s fainted!", target.Mention())
+				}
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: reply,
+					},
+				})
+			}
+		},
+		"setreminder": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			opts := i.ApplicationCommandData().Options
+			what := opts[0].StringValue()
+			when := opts[1].StringValue()
+			if what != "" && when != "" {
+				if reminder, err := stuff.NewReminder(i.Member.User.ID, when, what, time.Now()); err != nil {
+					log.Printf("error creating reminder from options %v", err)
+				} else {
+					if err := stuff.InsertReminder(db, i.GuildID, reminder); err != nil {
+						log.Printf("error saving reminder %v", err)
+					} else {
+						s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+							Type: discordgo.InteractionResponseChannelMessageWithSource,
+							Data: &discordgo.InteractionResponseData{
+								Content: fmt.Sprintf("got it, i will remind you on %s", reminder.Due.Format(time.RFC1123)),
+							},
+						})
+					}
+				}
+			} else {
+				log.Printf("error parsing arguments what='%v' when ='%v'", what, when)
+			}
+		},
 	}
 )
 
@@ -144,6 +212,38 @@ func main() {
 			break
 		}
 	}
+
+	// Check for due reminders
+	s.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
+		for {
+			tim := time.Now()
+			if reminders, err := stuff.GetDueReminders(db, tim); err != nil {
+				log.Printf("error checking reminders %v", err)
+			} else {
+				for _, r := range reminders {
+					msg := fmt.Sprintf("<@%s> Here is your reminder: '%s'", r.Reminder.DiscordId, r.Reminder.Text)
+					// This will become a problem if you add luna to more than 1 channel
+					if guild, err := s.State.Guild(r.GuildID); err != nil {
+						log.Printf("error finding guild %v", err)
+					} else {
+						for _, channel := range guild.Channels {
+							if channel.Name == "bot" {
+								if _, err := s.ChannelMessageSend(channel.ID, msg); err != nil {
+									log.Printf("error sending message %v", err)
+								} else {
+									if err := stuff.DeleteDueReminders(db, tim); err != nil {
+										log.Printf("error deleting reminders %v", err)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+			time.Sleep(10 * time.Second)
+		}
+	})
 
 	// Announce Pokerus
 	s.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
