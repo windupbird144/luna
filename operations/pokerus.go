@@ -1,4 +1,4 @@
-package stuff
+package operations
 
 import (
 	"fmt"
@@ -66,8 +66,6 @@ func Pokerus() (User, error) {
 	}
 	return user, nil
 }
-
-
 
 // Caveat: If you restart Luna during the middle of a Pokerus minute,
 // this channel will send the same Pokerus holder twice

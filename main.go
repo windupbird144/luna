@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"luna/stuff"
+	"luna/operations"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -103,7 +103,7 @@ var (
 			log.Println("received a /hug command")
 			id := i.ApplicationCommandData().Options[0].UserValue(nil).ID
 			log.Printf("hugging user %s\n", id)
-			gif, err := stuff.ReadRandomFile(*HugDirectory)
+			gif, err := operations.ReadRandomFile(*HugDirectory)
 			if err != nil {
 				log.Printf("error getting gif: %v\n", err)
 				return
@@ -126,8 +126,8 @@ var (
 			}
 		},
 		"pokerus": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-			username := stuff.NewUsername(i.ApplicationCommandData().Options[0].StringValue())
-			ok, err := stuff.UserExists(username)
+			username := operations.NewUsername(i.ApplicationCommandData().Options[0].StringValue())
+			ok, err := operations.UserExists(username)
 			if err != nil {
 				return
 			}
@@ -139,7 +139,7 @@ var (
 					},
 				})
 			}
-			reply := stuff.CreateMapping(db, i.Member.User.ID, username)
+			reply := operations.CreateMapping(db, i.Member.User.ID, username)
 			// Something went wrong
 			if reply == "" {
 				reply = "sorry, internal error :("
@@ -153,7 +153,7 @@ var (
 		},
 		"hyperbeam": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			if target := i.ApplicationCommandData().Options[0].UserValue(nil); target != nil {
-				hyperbeam := stuff.NewHyperBeam()
+				hyperbeam := operations.NewHyperBeam()
 				reply := fmt.Sprintf("%s users Hyper Beam on %s! %s takes %d damage!", i.Member.Mention(), target.Mention(), target.Mention(), hyperbeam.ActualDamage())
 				if hyperbeam.ActualDamage() >= 100 {
 					reply = reply + fmt.Sprintf(" It's a critical hit! %s fainted!", target.Mention())
@@ -171,10 +171,10 @@ var (
 			what := opts[0].StringValue()
 			when := opts[1].StringValue()
 			if what != "" && when != "" {
-				if reminder, err := stuff.NewReminder(i.Member.User.ID, when, what, time.Now()); err != nil {
+				if reminder, err := operations.NewReminder(i.Member.User.ID, when, what, time.Now()); err != nil {
 					log.Printf("error creating reminder from options %v", err)
 				} else {
-					if err := stuff.InsertReminder(db, i.GuildID, reminder); err != nil {
+					if err := operations.InsertReminder(db, i.GuildID, reminder); err != nil {
 						log.Printf("error saving reminder %v", err)
 					} else {
 						s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -217,7 +217,7 @@ func main() {
 	s.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
 		for {
 			tim := time.Now()
-			if reminders, err := stuff.GetDueReminders(db, tim); err != nil {
+			if reminders, err := operations.GetDueReminders(db, tim); err != nil {
 				log.Printf("error checking reminders %v", err)
 			} else {
 				for _, r := range reminders {
@@ -231,7 +231,7 @@ func main() {
 								if _, err := s.ChannelMessageSend(channel.ID, msg); err != nil {
 									log.Printf("error sending message %v", err)
 								} else {
-									if err := stuff.DeleteDueReminders(db, tim); err != nil {
+									if err := operations.DeleteDueReminders(db, tim); err != nil {
 										log.Printf("error deleting reminders %v", err)
 									}
 								}
@@ -247,8 +247,8 @@ func main() {
 
 	// Announce Pokerus
 	s.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
-		ch := make(chan stuff.User)
-		go stuff.PokeursChannel(ch)
+		ch := make(chan operations.User)
+		go operations.PokeursChannel(ch)
 		for {
 			pokerus := <-ch
 			// find all pokerus channels
@@ -261,7 +261,7 @@ func main() {
 				}
 			}
 			// get the member ID if available
-			discordId := stuff.GetDiscordId(db, stuff.NewUsername(pokerus.Name))
+			discordId := operations.GetDiscordId(db, operations.NewUsername(pokerus.Name))
 			var message string
 			if discordId == "" {
 				message = pokerus.Name
