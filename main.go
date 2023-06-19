@@ -7,6 +7,7 @@ import (
 	"log"
 	"luna/operations"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -23,6 +24,7 @@ var (
 	PostgresUri   = flag.String("db", "", "Postgres URI")
 	GuildID       = flag.String("guild", "", "(optional) guild ID for testing")
 	HugDirectory  = flag.String("hugdir", "", "Directory containing hug gifs")
+	PokerusServer = flag.String("pokerusserver", "", "Server to listen for requests to announce Pokérus")
 )
 
 var s *discordgo.Session
@@ -201,6 +203,7 @@ func init() {
 }
 
 func main() {
+	// Connect to Postgres, retry every 5 seconds until the connection succeeds, then continue
 	for {
 		db, err = sql.Open("postgres", *PostgresUri)
 		err = db.Ping()
@@ -246,11 +249,18 @@ func main() {
 	})
 
 	// Announce Pokerus
-	s.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
-		ch := make(chan operations.User)
-		go operations.PokeursChannel(ch)
-		for {
-			pokerus := <-ch
+	// To make Luna announce Pokérus, send a HTTP request to the port passed in the command line options
+	startServer := func() {
+		log.Println("Starting the Pokérus server")
+		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			log.Println("Received a request to announce Pokérus")
+			// get the current pokerus holder
+			pokerus, err := operations.Pokerus()
+			if err != nil {
+				log.Printf("Could not get the Pokerus host: %v\n", pokerus)
+				return
+			}
+
 			// find all pokerus channels
 			pokerusChannels := make([]string, 0)
 			for _, guild := range s.State.Guilds {
@@ -273,8 +283,10 @@ func main() {
 			for _, channelId := range pokerusChannels {
 				s.ChannelMessageSend(channelId, message)
 			}
-		}
-	})
+		})
+		err = http.ListenAndServe(*PokerusServer, nil)
+	}
+	go startServer()
 
 	err := s.Open()
 	if err != nil {

@@ -21,8 +21,7 @@ Tests are run against a real database. Run the following commands
 2. Apply the migrations
 
 
-`migrate -source "file://./migrations" -database postgres://postgres@localhost
-:24019/postgres?sslmode=disable up`
+`migrate -source "file://./migrations" -database "postgres://postgres@localhost:24019/postgres?sslmode=disable" up`
 
 3. Run the tests
 
