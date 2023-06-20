@@ -74,3 +74,33 @@ func DeleteDueReminders(conn *sql.DB, time time.Time) error {
 	_, err := conn.Exec("delete from reminders where due < $1", time)
 	return err
 }
+
+func SetPokerusLock(conn *sql.DB, time time.Time) error {
+	if s, err := time.MarshalText(); err != nil {
+		return err
+	} else {
+		_, err := conn.Exec("insert into global_properties (key,value) values ('POKERUS_LOCK', $1)", s)
+		return err
+	}
+}
+
+// Returns the value of the POKERUS LOCK.
+// This lock should be set when Pokérus host is announced in a Discord guild, see SetPokerusLock.
+// Returns the time stamp zero if this lock has never been set.
+func GetPokerusLock(conn *sql.DB) (time.Time, error) {
+	var time time.Time
+	row := conn.QueryRow("select value from global_properties where key='POKERUS_LOCK'")
+	var b []byte
+	err := row.Scan(&b)
+	if err != nil && err != sql.ErrNoRows {
+		// an error occured
+		return time, err
+	} else if err == sql.ErrNoRows {
+		// the lock was never set, return the zero-timestapm and no error
+		return time, nil
+	} else {
+		// unmarshal the timestamp
+		err = time.UnmarshalText(b)
+		return time, err
+	}
+}

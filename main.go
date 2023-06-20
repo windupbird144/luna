@@ -254,11 +254,31 @@ func main() {
 		log.Println("Starting the Pokérus server")
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			log.Println("Received a request to announce Pokérus")
+			// Get the Pokerus lock. If the lock was set less than ten minutes ago, do not announce pokerus.
+			lock_time, err := operations.GetPokerusLock(db)
+			if err != nil {
+				log.Printf("Error getting the Pokerus lock: %v\n", err)
+			} else {
+				log.Printf("Got Pokerus lock: %v\n", lock_time)
+			}
+			duration := time.Now().Sub(lock_time)
+			minutes_since_last_announcement := duration.Minutes()
+
+			if minutes_since_last_announcement < 10 {
+				log.Printf("Refusing to announce Pokerus because Pokerus was already announced %v minutes ago.", minutes_since_last_announcement)
+				return
+			} else {
+				log.Printf("Proceeding to announce - Minutes since last announcement: %v\n", minutes_since_last_announcement)
+			}
+
 			// get the current pokerus holder
+			log.Printf("Fetching Pokerus host")
 			pokerus, err := operations.Pokerus()
 			if err != nil {
 				log.Printf("Could not get the Pokerus host: %v\n", pokerus)
 				return
+			} else {
+				log.Printf("Got Pokerus host: %v\n", pokerus)
 			}
 
 			// find all pokerus channels
@@ -282,6 +302,11 @@ func main() {
 			// announce pokerus in every channel
 			for _, channelId := range pokerusChannels {
 				s.ChannelMessageSend(channelId, message)
+			}
+			// set the pokerus lock
+			err = operations.SetPokerusLock(db, time.Now())
+			if err != nil {
+				log.Printf("Error setting the Pokerus lock: %v", err)
 			}
 		})
 		err = http.ListenAndServe(*PokerusServer, nil)

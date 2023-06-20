@@ -102,3 +102,24 @@ func TestDeleteDueReminders(t *testing.T) {
 	db.QueryRow("select count(*) from reminders").Scan(&got)
 	assert.Equal(t, 1, got, "wrong number of due reminders after deleteing due reminders")
 }
+
+func TestGetAndSetPokerusLock(t *testing.T) {
+	db, _ := sql.Open("postgres", "host=localhost user=postgres port=24019 sslmode=disable")
+	defer db.Close()
+
+	// Delete the Pokerus lock. The returned Pokerus lock is the zero time.
+	if _, err := db.Exec("delete from global_properties where key = 'POKERUS_LOCK'"); err != nil {
+		t.Fatalf("Could not delete from the db table: %v", err)
+	}
+	lock_time, err := GetPokerusLock(db)
+	assert.Nil(t, err)
+	assert.True(t, lock_time.IsZero())
+
+	// Set the Pokerus lock, then get it, and make sure the two values are the same
+	some_time := time.Now()
+	err = SetPokerusLock(db, some_time)
+	assert.Nil(t, err)
+	lock_time, err = GetPokerusLock(db)
+	assert.Nil(t, err)
+	assert.True(t, lock_time.Equal(some_time), "Not equal: lock_time %v some_time %v", lock_time, some_time)
+}

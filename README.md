@@ -16,7 +16,7 @@ Tests are run against a real database. Run the following commands
 
 1. Create a docker container bound to port 24019
 
-`docker container run -p 24019:5432 -e POSTGRES_HOST_AUTH_METHOD=trust postgres`
+`docker container run -p 24019:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -d --name luna-db postgres`
 
 2. Apply the migrations
 
@@ -36,3 +36,5 @@ Tests are run against a real database. Run the following commands
 ## Developing luna
 - To modify an existing command locate the files `./operations/$command.go` and `./operations/$command_test.go` and modify them accordingly.
 - To create a new command create the files `./operations/$command` and `./operations/$command_test.go` where `$command` should match the Discord command that is executed. Register the new command in `./main.go`
+- To create a migration, use (example): `~/.go/bin/migrate create -dir migrations -ext sql -seq 6 add_settings`
+- To run Luna `go run main.go -db "postgres://postgres@localhost:24019/postgres?sslmode=disable" -app MY_APP -token MY_TOKEN -pokerusserver ":12345"`
