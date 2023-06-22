@@ -3,6 +3,7 @@ package operations
 import (
 	"fmt"
 	"log"
+	"luna/internals"
 	"net/http"
 	"strings"
 	"time"
@@ -52,6 +53,9 @@ func UserExists(name Username) (bool, error) {
 
 // Returns the relative URL of the current Pokerus holder e.g. /user/SYSTEM
 func Pokerus() (User, error) {
+	if internals.IsDebug {
+		return User{Name: "drwho", Url: "https://pokefarm.com/user/drwho"}, nil
+	}
 	resp, err := client.Head(pfq + "/user/~pkrs")
 	if err != nil {
 		return User{}, err
