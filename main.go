@@ -19,12 +19,13 @@ import (
 
 // Bot parameters
 var (
-	ApplicationId = flag.String("app", "", "Discord application ID")
-	BotToken      = flag.String("token", "", "Discord access token")
-	PostgresUri   = flag.String("db", "", "Postgres URI")
-	GuildID       = flag.String("guild", "", "(optional) guild ID for testing")
-	HugDirectory  = flag.String("hugdir", "", "Directory containing hug gifs")
-	PokerusServer = flag.String("pokerusserver", "", "Server to listen for requests to announce Pokérus")
+	ApplicationId   = flag.String("app", "", "Discord application ID")
+	BotToken        = flag.String("token", "", "Discord access token")
+	PostgresUri     = flag.String("db", "", "Postgres URI")
+	GuildID         = flag.String("guild", "", "(optional) guild ID for testing")
+	HugDirectory    = flag.String("hugdir", "", "Directory containing hug gifs")
+	PokerusServer   = flag.String("pokerusserver", "", "Server to listen for requests to announce Pokérus")
+	PokerusLockTime = flag.Int("pokeruslocktime", 10, "Limit pokerus announcement every X minutes")
 )
 
 var s *discordgo.Session
@@ -264,7 +265,7 @@ func main() {
 			duration := time.Now().Sub(lock_time)
 			minutes_since_last_announcement := duration.Minutes()
 
-			if minutes_since_last_announcement < 10 {
+			if minutes_since_last_announcement < float64(*PokerusLockTime) {
 				log.Printf("Refusing to announce Pokerus because Pokerus was already announced %v minutes ago.", minutes_since_last_announcement)
 				return
 			} else {
@@ -281,28 +282,38 @@ func main() {
 				log.Printf("Got Pokerus host: %v\n", pokerus)
 			}
 
-			// find all pokerus channels
-			pokerusChannels := make([]string, 0)
+			// get the discord ID of the host
+			discordId := operations.GetDiscordId(db, operations.NewUsername(pokerus.Name))
+
+			// iterate over guilds
 			for _, guild := range s.State.Guilds {
+				// find the channel named rus-alert
 				for _, channel := range guild.Channels {
 					if channel.Name == "rus-alert" {
-						pokerusChannels = append(pokerusChannels, channel.ID)
+						// check if the pokerus host is in the guild
+						// they are in the guild if s.GuildMember returns a non-nil member and a nil error
+						hostInGuild := false
+						if discordId != "" {
+							member, err := s.GuildMember(guild.ID, discordId)
+							if err != nil {
+								log.Printf("Error getting guild member: %v\n", err)
+							}
+							hostInGuild = member != nil && err == nil
+						}
+						// Construct the message (if the host is in the guild: with a ping)
+						var messagePart string
+						if hostInGuild {
+							messagePart = fmt.Sprintf("<@%s>", discordId)
+						} else {
+							messagePart = pokerus.Name
+						}
+						message := fmt.Sprintf("%s has Pokérus <%s>", messagePart, pokerus.Url)
+
+						s.ChannelMessageSend(channel.ID, message)
 					}
 				}
 			}
-			// get the member ID if available
-			discordId := operations.GetDiscordId(db, operations.NewUsername(pokerus.Name))
-			var message string
-			if discordId == "" {
-				message = pokerus.Name
-			} else {
-				message = fmt.Sprintf("<@%s>", discordId)
-			}
-			message = fmt.Sprintf("%s has Pokérus <%s>", message, pokerus.Url)
-			// announce pokerus in every channel
-			for _, channelId := range pokerusChannels {
-				s.ChannelMessageSend(channelId, message)
-			}
+
 			// set the pokerus lock
 			err = operations.SetPokerusLock(db, time.Now())
 			if err != nil {
