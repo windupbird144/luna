@@ -24,7 +24,7 @@ var (
 	PostgresUri     = flag.String("db", "", "Postgres URI")
 	GuildID         = flag.String("guild", "", "(optional) guild ID for testing")
 	HugDirectory    = flag.String("hugdir", "", "Directory containing hug gifs")
-	PokerusServer   = flag.String("pokerusserver", "", "Server to listen for requests to announce Pokérus")
+	Server          = flag.String("server", "", "Server to listen for requests to announce Pokérus")
 	PokerusLockTime = flag.Int("pokeruslocktime", 10, "Limit pokerus announcement every X minutes")
 )
 
@@ -217,43 +217,11 @@ func main() {
 		}
 	}
 
-	// Check for due reminders
-	s.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
-		for {
-			tim := time.Now()
-			if reminders, err := operations.GetDueReminders(db, tim); err != nil {
-				log.Printf("error checking reminders %v", err)
-			} else {
-				for _, r := range reminders {
-					msg := fmt.Sprintf("<@%s> Here is your reminder: '%s'", r.Reminder.DiscordId, r.Reminder.Text)
-					// This will become a problem if you add luna to more than 1 channel
-					if guild, err := s.State.Guild(r.GuildID); err != nil {
-						log.Printf("error finding guild %v", err)
-					} else {
-						for _, channel := range guild.Channels {
-							if channel.Name == "bot" {
-								if _, err := s.ChannelMessageSend(channel.ID, msg); err != nil {
-									log.Printf("error sending message %v", err)
-								} else {
-									if err := operations.DeleteDueReminders(db, tim); err != nil {
-										log.Printf("error deleting reminders %v", err)
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-
-			time.Sleep(10 * time.Second)
-		}
-	})
-
 	// Announce Pokerus
 	// To make Luna announce Pokérus, send a HTTP request to the port passed in the command line options
 	startServer := func() {
 		log.Println("Starting the Pokérus server")
-		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc("/pokerus", func(w http.ResponseWriter, r *http.Request) {
 			log.Println("Received a request to announce Pokérus")
 			// Get the Pokerus lock. If the lock was set less than ten minutes ago, do not announce pokerus.
 			lock_time, err := operations.GetPokerusLock(db)
@@ -318,9 +286,45 @@ func main() {
 			err = operations.SetPokerusLock(db, time.Now())
 			if err != nil {
 				log.Printf("Error setting the Pokerus lock: %v", err)
+			} else {
+				log.Printf("Successfully set the Pokerus lock")
 			}
 		})
-		err = http.ListenAndServe(*PokerusServer, nil)
+		http.HandleFunc("/reminders", func(w http.ResponseWriter, r *http.Request) {
+			// Check for due reminders
+			tim := time.Now()
+			if reminders, err := operations.GetDueReminders(db, tim); err != nil {
+				log.Printf("error checking reminders %v", err)
+			} else {
+				log.Printf("Got %v due reminders", len(reminders))
+				for _, r := range reminders {
+					msg := fmt.Sprintf("<@%s> Here is your reminder: '%s'", r.Reminder.DiscordId, r.Reminder.Text)
+					// This will become a problem if you add luna to more than 1 channel
+					log.Printf("Trying to find guild with id %v", r.GuildID)
+					if guild, err := s.State.Guild(r.GuildID); err != nil {
+						log.Printf("error finding guild %v", err)
+					} else {
+						log.Printf("Found guild ID %v", r.GuildID)
+						log.Printf("Looking for a channel called 'bot' in guild ID %v", r.GuildID)
+						for _, channel := range guild.Channels {
+							if channel.Name == "bot" {
+								log.Printf("Sending reminder message")
+								if _, err := s.ChannelMessageSend(channel.ID, msg); err != nil {
+									log.Printf("error sending message %v", err)
+								} else {
+									if err := operations.DeleteDueReminders(db, tim); err != nil {
+										log.Printf("error deleting reminders %v", err)
+									} else {
+										log.Printf("Successfully sent and deleted reminder")
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		})
+		err = http.ListenAndServe(*Server, nil)
 	}
 	go startServer()
 
