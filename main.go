@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -244,7 +245,7 @@ func main() {
 			log.Printf("Fetching Pokerus host")
 			pokerus, err := operations.Pokerus()
 			if err != nil {
-				log.Printf("Could not get the Pokerus host: %v\n", pokerus)
+				log.Printf("Could not get the Pokerus host: %v\n", err)
 				return
 			} else {
 				log.Printf("Got Pokerus host: %v\n", pokerus)
@@ -254,10 +255,15 @@ func main() {
 			discordId := operations.GetDiscordId(db, operations.NewUsername(pokerus.Name))
 
 			// iterate over guilds
+			log.Printf("begin iterating over guilds")
 			for _, guild := range s.State.Guilds {
+				log.Printf("looking for a channel called 'rus-alert' in guild %v", guild.ID)
 				// find the channel named rus-alert
+				pokerusChannelFound := false
 				for _, channel := range guild.Channels {
-					if channel.Name == "rus-alert" {
+					if strings.Contains(channel.Name, "rus-alert") {
+						pokerusChannelFound = true
+						log.Printf("found channel in guild ID %v with channel ID %v", guild.ID, channel.ID)
 						// check if the pokerus host is in the guild
 						// they are in the guild if s.GuildMember returns a non-nil member and a nil error
 						hostInGuild := false
@@ -276,9 +282,16 @@ func main() {
 							messagePart = pokerus.Name
 						}
 						message := fmt.Sprintf("%s has Pokérus <%s>", messagePart, pokerus.Url)
-
-						s.ChannelMessageSend(channel.ID, message)
+						log.Printf("sending pokerus message")
+						if _, err := s.ChannelMessageSend(channel.ID, message); err == nil {
+							log.Printf("Successfully sent pokerus message")
+						} else {
+							log.Printf("Could NOT send the pokerus message, error was %v", err)
+						}
 					}
+				}
+				if !pokerusChannelFound {
+					log.Printf("warning: did not find any channel containing rus-alert in guild %v", guild.ID)
 				}
 			}
 

@@ -1,3 +1,6 @@
+# 1.2
+- The channel for pokerus alerts no longer has to be named `rus-alert`, any name containing `rus-alert` is fine. This allows for decorating the channel name with emojis.
+
 # 1.1
 - Rename command line flag `-pokerusserver` to `-server`
 - Move endpoint `/` to `/pokerus`
