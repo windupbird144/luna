@@ -14,21 +14,21 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/bwmarrin/discordgo"
 	_ "github.com/lib/pq"
 )
 
-// Bot parameters
-var (
-	ApplicationId   = flag.String("app", "", "Discord application ID")
-	BotToken        = flag.String("token", "", "Discord access token")
-	PostgresUri     = flag.String("db", "", "Postgres URI")
-	GuildID         = flag.String("guild", "", "(optional) guild ID for testing")
-	HugDirectory    = flag.String("hugdir", "", "Directory containing hug gifs")
-	Server          = flag.String("server", "", "Server to listen for requests to announce Pokérus")
-	PokerusLockTime = flag.Int("pokeruslocktime", 10, "Limit pokerus announcement every X minutes")
-)
+type LunaConfig struct {
+	ApplicationId   string
+	BotToken        string
+	PostgresUri     string
+	HugDirectory    string
+	Server          string
+	PokerusLockTime int
+}
 
+var config LunaConfig
 var s *discordgo.Session
 var db *sql.DB
 var err error
@@ -38,8 +38,36 @@ func init() { rand.Seed(time.Now().UnixNano()) }
 func init() { flag.Parse() }
 
 func init() {
+	possibleConfigFileLocations := []string{"/etc/luna/config.toml"}
+	if os.Getenv("XDG_CONFIG_HOME") != "" {
+		possibleConfigFileLocations = append(possibleConfigFileLocations, os.ExpandEnv("$XDG_CONFIG_HOME/luna/config.toml"))
+	} else {
+		possibleConfigFileLocations = append(possibleConfigFileLocations, os.ExpandEnv("$HOME/.config/luna/config.toml"))
+	}
+	if os.Getenv("LUNA_CONFIG") != "" {
+		possibleConfigFileLocations = append(possibleConfigFileLocations, os.ExpandEnv("$LUNA_CONFIG"))
+	}
+	log.Printf("checking %v locations: %v", len(possibleConfigFileLocations), possibleConfigFileLocations)
+	var configLocation string
+	for _, location := range possibleConfigFileLocations {
+		if _, err := os.Stat(location); os.IsNotExist(err) {
+			continue
+		} else {
+			configLocation = location
+			break
+		}
+	}
+	if configLocation == "" {
+		log.Fatal("None of the config locations exist!")
+	}
+	if _, err = toml.DecodeFile(configLocation, &config); err != nil {
+		log.Fatalf("could not decode the config file at %v: %v", configLocation, err)
+	}
+}
+
+func init() {
 	var err error
-	s, err = discordgo.New("Bot " + *BotToken)
+	s, err = discordgo.New("Bot " + config.BotToken)
 	if err != nil {
 		log.Fatalf("Invalid bot parameters: %v", err)
 	}
@@ -101,13 +129,18 @@ var (
 				},
 			},
 		},
+		{
+			Name:        "forgetme",
+			Description: "do not receive any more pokerus notifications",
+			Options:     []*discordgo.ApplicationCommandOption{},
+		},
 	}
 	commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
 		"hug": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			log.Println("received a /hug command")
 			id := i.ApplicationCommandData().Options[0].UserValue(nil).ID
 			log.Printf("hugging user %s\n", id)
-			gif, err := operations.ReadRandomFile(*HugDirectory)
+			gif, err := operations.ReadRandomFile(config.HugDirectory)
 			if err != nil {
 				log.Printf("error getting gif: %v\n", err)
 				return
@@ -115,7 +148,7 @@ var (
 			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 			})
-			_, err = s.FollowupMessageCreate(*ApplicationId, i.Interaction, true, &discordgo.WebhookParams{
+			_, err = s.FollowupMessageCreate(config.ApplicationId, i.Interaction, true, &discordgo.WebhookParams{
 				Content: fmt.Sprintf("\\*hugs <@%s>\\*", id),
 				Files: []*discordgo.File{
 					{
@@ -193,6 +226,23 @@ var (
 				log.Printf("error parsing arguments what='%v' when ='%v'", what, when)
 			}
 		},
+		"forgetme": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			success, err := operations.DeleteFromRemindersTableByDiscordId(db, i.Member.User.ID)
+			var msg string
+			if err != nil {
+				msg = "internal error :("
+			} else if success {
+				msg = "ok, you will not receive any more pokerus notifications!"
+			} else {
+				msg = "it appears notifications were never turned on for your discord user"
+			}
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: msg,
+				},
+			})
+		},
 	}
 )
 
@@ -207,7 +257,7 @@ func init() {
 func main() {
 	// Connect to Postgres, retry every 5 seconds until the connection succeeds, then continue
 	for {
-		db, err = sql.Open("postgres", *PostgresUri)
+		db, err = sql.Open("postgres", config.PostgresUri)
 		err = db.Ping()
 		if err != nil {
 			log.Printf("Postgres not connected, retry in 5 seconds %v", err)
@@ -234,7 +284,7 @@ func main() {
 			duration := time.Now().Sub(lock_time)
 			minutes_since_last_announcement := duration.Minutes()
 
-			if minutes_since_last_announcement < float64(*PokerusLockTime) {
+			if minutes_since_last_announcement < float64(config.PokerusLockTime) {
 				log.Printf("Refusing to announce Pokerus because Pokerus was already announced %v minutes ago.", minutes_since_last_announcement)
 				return
 			} else {
@@ -337,7 +387,7 @@ func main() {
 				}
 			}
 		})
-		err = http.ListenAndServe(*Server, nil)
+		err = http.ListenAndServe(config.Server, nil)
 	}
 	go startServer()
 
@@ -347,12 +397,12 @@ func main() {
 	}
 
 	log.Println("Removing previous commands...")
-	registeredCommands, err := s.ApplicationCommands(s.State.User.ID, *GuildID)
+	registeredCommands, err := s.ApplicationCommands(s.State.User.ID, "")
 	if err != nil {
 		log.Fatalln(err)
 	}
 	for _, v := range registeredCommands {
-		err := s.ApplicationCommandDelete(s.State.User.ID, *GuildID, v.ID)
+		err := s.ApplicationCommandDelete(s.State.User.ID, "", v.ID)
 		if err != nil {
 			log.Panicf("Cannot delete '%v' command: %v", v.Name, err)
 		}
@@ -360,7 +410,7 @@ func main() {
 
 	log.Println("Adding commands...")
 	for _, v := range commands {
-		_, err := s.ApplicationCommandCreate(s.State.User.ID, *GuildID, v)
+		_, err := s.ApplicationCommandCreate(s.State.User.ID, "", v)
 		if err != nil {
 			log.Panicf("Cannot create '%v' command: %v", v.Name, err)
 		}

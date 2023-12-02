@@ -104,3 +104,22 @@ func GetPokerusLock(conn *sql.DB) (time.Time, error) {
 		return time, err
 	}
 }
+
+func RemoveUserByDiscordId(conn *sql.DB, discordId string) (bool, error) {
+	result, err := conn.Exec("delete from usernames where discord = $1", discordId)
+	if err != nil {
+		// internal error
+		return false, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		// internal error
+		return false, err
+	}
+	if rowsAffected == 0 {
+		// user was not found in the database
+		return false, nil
+	}
+	// user was deleted
+	return true, nil
+}

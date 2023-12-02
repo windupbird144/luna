@@ -1,0 +1,25 @@
+version: "3.8"
+services:
+  app:
+    build: .
+    command: /app/luna
+    networks:
+      - luna
+    volumes:
+      - config:/etc/luna/
+  db:
+    image: docker.io/library/postgres
+    environment:
+      POSTGRES_USER: luna
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    networks:
+      - luna
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+networks:
+  luna:
+volumes:
+  config:
+  pg-data:

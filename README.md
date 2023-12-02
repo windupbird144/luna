@@ -28,11 +28,24 @@ Tests are run against a real database. Run the following commands
 
 `go test luna/operations`
 
+4. Create a config file and run luna
+
+`edit ~/.config/luna/config.toml`
+
+5. Run
+
+`go run .`
+
 ## Running luna
 
 - Create a postgres database and apply migrations/init.sql
 - Build the project with `go build`
-- Run with the appropriate [command line flags](./main.go)
+- Create the config at one of these locations:
+	- `/etc/luna/config.toml`
+	- `$XDG_CONFIG_HOME/luna/config.toml`
+	- `$HOME/.config/luna/config.toml`
+	- `$LUNA_CONFIG`
+- Run
 
 ## Deploying luna
 
@@ -72,3 +85,14 @@ If you start Luna with -server 12345, check for the Pokerus host at ten seconds 
 - To create a new command create the files `./operations/$command` and `./operations/$command_test.go` where `$command` should match the Discord command that is executed. Register the new command in `./main.go`
 - To create a migration, use (example): `~/.go/bin/migrate create -dir migrations -ext sql -seq 6 add_settings`
 - To run Luna `go run main.go -db "postgres://postgres@localhost:24019/postgres?sslmode=disable" -app MY_APP -token MY_TOKEN -pokerusserver ":12345"`
+
+## Running luna with Docker
+
+1. Download the project
+2. There is a docker volume `config` in which you can create the file `config.toml`, it will be mounted at `/etc/luna/config.toml` in the luna container.
+3. You can also conveniently place a directory of gifs for the hug command into the config volume
+4. The luna container provides the `migrate` program to run migrations. You need to migrate them manually.
+
+```bash
+docker container exec luna-app-1 migrate -source file:///app/migrations -database 'postgres://luna@db:5432/postgres?sslmode=disable' up
+```
